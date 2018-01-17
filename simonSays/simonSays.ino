@@ -1,4 +1,3 @@
-#include <Bounce2.h>
 #include <Tone.h>
 #include <Wire.h>
 
@@ -6,10 +5,14 @@
 #define numButtons 4
 // the length of the Simon Says sequence
 #define seqLength 4
-// the debounce time in milliseconds
-#define debounceTime 5
+// the length of the serial number
+#define serialLength 6
+// the number of characters for the serial number
+#define numChars 36
 // the tone duration in milliseconds
-#define toneDuration 
+#define toneDuration 200
+// the LED duration in milliseconds
+#define ledDuration 200
 #define red 0
 #define blue 1
 #define green 2
@@ -39,6 +42,7 @@ const int buzzerPin = ;
 
 // the button that needs to be pressed if a button shows up in sequence
 // vowel/no vowel
+volatile bool hasVowel = false;
 const int v   = {{blue, red, yellow, green},  // 0 strikes
                  {yellow, green, blue, red},  // 1 strike
                  {green, red, yellow, blue}}; // 2 strikes
@@ -46,15 +50,28 @@ const int nv  = {{blue, yellow, green, red},  // 0 strikes
                  {red, blue, yellow, green},  // 1 strike
                  {yellow, green, blue, red}}; // 2 strikes
 
-Bounce bouncer[numButtons];
+// all of the possible characters that can make up the serial number
+// vowels are 'A', 'E', 'I', 'O', 'U' (indices 0, 4, 8, 14, and 20)
+const char choices = {'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I',
+                      'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R',
+                      'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '0',
+                      '1', '2', '3', '4', '5', '6', '7', '8', '9'};
+
+volatile int inputs[seqLength];
+
 Tone buzzer;
-int sequence[seqLength];
-int strikes;
-int progress = 0;
+String serial;
+volatile int sequence[seqLength];
+volatile int strikes  = 0;
+volatile int progress = 0;
+volatile int numInput = 0;
+volatile bool rcvdInput = false;
+volatile bool done = false;
 
 void setup() {
   // put your setup code here, to run once:
   // initialize the psuedo-random number generator
+  serial.begin(9600);
   randomSeed(analogRead(0)); // TODO: PICK AN UNUSED PIN
   /*
    * initialize the buttons as inputs with internal pullup resistors and
@@ -65,17 +82,17 @@ void setup() {
   for (int x = 0; x < numButtons; x++) {
     pinMode(button[x], INPUT_PULLUP);
     pinMode(led[x], OUTPUT);
-    // create and setup the Bounce object
-    bouncer[x] = Bounce();
-    bouncer[x].attach(button[x]);
-    bouncer[x].interval(debounceTime);
   }
+  attachInterrupt(digitalPinToInterrupt(button[0]), buttonISR0, FALLING);
+  attachInterrupt(digitalPinToInterrupt(button[1]), buttonISR1, FALLING);
+  attachInterrupt(digitalPinToInterrupt(button[2]), buttonISR2, FALLING);
+  attachInterrupt(digitalPinToInterrupt(button[3]), buttonISR3, FALLING);
   buttonLeds(LOW);
   // initialize the green LED as an output and make sure it's off
   pinMode(clearLED, OUTPUT);
   digitalWrite(clearLED, LOW);
   randomize();
-  // 
+  // initialize the buzzer
   buzzer.begin(buzzerPin);
 }
 
@@ -85,11 +102,135 @@ void loop() {
    * https://code.google.com/archive/p/rogue-code/wikis/ToneLibraryDocumentation.wiki
    */
   // put your main code here, to run repeatedly:
-
+  if (done) {
+    noInterrupts();
+    digitalWrite(clearLED, HIGH);
+    buttonLeds(LOW);
+  } else if (numInput) {
+    if (rcvdInput) {
+      checkInput();
+    }
+  } else {
+    displaySequence();
+    delay(1000);
+  }
 }
 
-void buttonISR() {
-  
+void generateSerialNumber() {
+  char temp[serialLength];isr
+  int tempIndex;
+  for (int x = 0; x < serialLength; x++) {
+    tempIndex = random(0, numChars)
+    temp[x] = choices[tempIndex];
+    switch (tempIndex) {
+      case 0:   // 'A', fallthrough
+      case 4:   // 'E', fallthrough
+      case 8:   // 'I', fallthrough
+      case 14:  // 'O', fallthrough
+      case 20:  // 'U'
+        hasVowel = True;
+      default:  // not a vowel
+        break;
+    }
+  }
+  serial = String(temp);
+  Serial.println(serial);
+}
+
+void displaySequence() {
+  for (int x = 0; x <= progress; x++) {
+    fireButton(sequence[x]);
+  }
+}
+
+// TODO: FIGURE OUT TONES FOR EACH COLOR
+void fireButton(int color) {
+  switch (color) {
+    case red:     // fallthrough
+    case green:   // fallthrough
+    case blue:    // fallthrough
+    case yellow:  // fallthrough
+      digitalWrite(led[color], HIGH);
+      buzzer.play(tones[color], toneDuration);
+      delay(ledDuration);
+      digitalWrite(led[color], LOW);
+      break;
+    default:  // should not reach here
+      break;
+  }
+}
+
+void checkInput() {
+  noInterrupts();
+  rcvdInput = false;
+  int cap = min(numInput, progress);
+  if (hasVowel) {
+    for (int x = 0; x <= cap; x++) {
+      if (inputs[x] != v[strikes][x]) {
+        fail();
+      }
+    }
+  } else {
+    for (int x = 0; x <= cap; x++) {
+      if (inputs[x] != nv[strikes][x]) {
+        fail();
+      }
+    }
+  }
+  progress++;
+  numInput = 0;
+  if (progress == seq_length) {
+    done = true;
+  }
+  interrupts();
+}
+
+// red
+void buttonISR0() {
+  static unsigned long lastInterruptTime = 0;
+  unsigned long interruptTime = millis();
+  if ((interruptTime - lastInterruptTime) > 200) {
+    inputs[numInput] = red;
+    rcvdInput = true;
+    numInput++;
+    lastInterruptTime = interruptTime;
+  }
+}
+
+// green
+void buttonISR1() {
+  static unsigned long lastInterruptTime = 0;
+  unsigned long interruptTime = millis();
+  if ((interruptTime - lastInterruptTime) > 200) {
+    inputs[numInput] = green;
+    rcvdInput = true;
+    numInput++;
+    lastInterruptTime = interruptTime;
+  }
+}
+
+// blue
+void buttonISR2() {
+  static unsigned long lastInterruptTime = 0;
+  unsigned long interruptTime = millis();
+  if ((interruptTime - lastInterruptTime) > 200) {
+    inputs[numInput] = blue;
+    rcvdInput = true;
+    numInput++;
+    lastInterruptTime = interruptTime;
+  }
+}
+
+// yellow
+void buttonISR3() {
+  static unsigned long lastInterruptTime = 0;
+  unsigned long interruptTime = millis();
+  if ((interruptTime - lastInterruptTime) > 200) {
+    inputs[numInput] = yellow;
+    rcvdInput = true;
+    numInput++;
+    lastInterruptTime = interruptTime;
+  }
 }
 
 void buttonLeds(byte state) {
@@ -99,9 +240,13 @@ void buttonLeds(byte state) {
 }
 
 void fail() {
+  noInterrupts();
+  numInput = 0;
   progress = 0;
+  strikes++;
   buzzer.play(, toneDuration); // TODO: FIGURE OUT THE FAILURE TONE
   randomize();
+  interrupts();
 }
 
 void randomize() {
