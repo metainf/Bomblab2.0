@@ -1,3 +1,4 @@
+
 /* Serial 7-Segment Display Example Code
     Serial Mode Stopwatch
    by: Jim Lindblom
@@ -21,6 +22,9 @@
       8   --------------------  RX
 */
 #include <SoftwareSerial.h>
+#include <Wire.h>
+#include <Bounce2.h>
+#include <Tone.h>
 
 // These are the Arduino pins required to create a software seiral
 //  instance. We'll actually only use the TX pin.
@@ -37,13 +41,18 @@ const int startButton = 4;
 const int diffButton = 5;
 
 // Buzzer pin
-const int buzzer = 3;
+const int buzzerPin = 3;
 
 SoftwareSerial s7s(softwareRx, softwareTx);
 
+Bounce start = Bounce();
+Bounce diff = Bounce();
+Tone buzz;
+
 unsigned int strikes = 0;     // The total number of strikes
-unsigned int difficulty = 0;  // The difficulty of the game, 0 through 9
+unsigned int difficulty = 0;  // The difficulty of the game, 0 through 3
 char state = 'w';             // The state of the game
+unsigned int finishedMod = 0; // The number of finished modules
 /*
    w = waiting state, waiting for the user to start the game after selecting difficulty
    b = begin state, setup game to start.
@@ -51,21 +60,20 @@ char state = 'w';             // The state of the game
    c = completed, CT win, bomb has been defused
    f = failed, T win, bomb has exploded
 */
-int startBttnState;
-int startBttnStateLast = LOW;
 
-int diffBttnState;
-int diffBttnStateLast = LOW;
-
-unsigned long startDebounceTimeLast = 0;  // the last time the output pin was toggled
-unsigned long diffDebounceTimeLast = 0;  // the last time the output pin was toggled
-unsigned long debounceDelay = 50;    // the debounce time; increase if the output flickers
-
-unsigned int counter = 0;     // This variable will count up to 65k
-char tempString[10];  // Will be used with sprintf to create strings
+unsigned long maxTime = 1UL * 5UL * 1000UL; // The maximum value of time in ms
+unsigned long startTime;
+//volatile char tempString[10];  // Will be used with sprintf to create strings
+String tempString;
 
 void setup()
 {
+
+  // Open serial port for debugging
+  Serial.begin(9600);
+
+  // Start the random seed
+  randomSeed(analogRead(0));
 
   // Setup the pins:
   pinMode(startButton, INPUT);
@@ -78,6 +86,21 @@ void setup()
   digitalWrite(strike0, LOW);
   digitalWrite(strike1, LOW);
   digitalWrite(strike2, LOW);
+
+  // Start i2c
+  Wire.begin();
+
+  // Attach the debounced buttons to the pins
+  start.attach(startButton);
+  diff.attach(diffButton);
+
+  // Setup the debounce time in millis
+  start.interval(25);
+  diff.interval(25);
+
+  // Setup the buzzer
+  buzz.begin(buzzerPin);
+
 
   // Must begin s7s software serial at the correct baud rate.
   //  The default of the s7s is 9600.
@@ -105,86 +128,174 @@ void loop()
       {
 
         // Read the state of the difficulty button
-        int diffRead = digitalRead(diffButton);
+        diff.update();
 
-        // check to see if you just pressed the button
-        // (i.e. the input went from LOW to HIGH), and you've waited long enough
-        // since the last press to ignore any noise:
-        if (diffRead != diffBttnStateLast) {
-          diffDebounceTimeLast = millis();
+        // Increase the difficulty if there was a postive edge
+        if ( diff.rose()) {
+          difficulty++;
+          difficulty = difficulty % 4;
+          // print out the difficulty onto the display
+          tempString = String("L" + String(difficulty, DEC) + "  ");
+          s7s.print(tempString);
         }
-
-        if (millis() - diffDebounceTimeLast > debounceDelay) {
-          // If the button state has not changed, record the state
-
-          // If the state has changed from the last recording
-          if (diffRead != diffBttnState) {
-            diffBttnState = diffRead;
-
-
-            // Increase the difficulty if there was a postive edge
-            if ( diffBttnState == HIGH) {
-              difficulty++;
-              difficulty = difficulty % 10;
-              // print out the difficulty onto the display
-              sprintf(tempString, "L%d  ", difficulty);
-              s7s.print(tempString);
-            }
-          }
-        }
-        diffBttnStateLast = diffRead;
 
         // Read the state of the start button
-        int startRead = digitalRead(startButton);
+        start.update();
 
-        // check to see if you just pressed the button
-        // (i.e. the input went from LOW to HIGH), and you've waited long enough
-        // since the last press to ignore any noise:
-        if (startRead != startBttnStateLast) {
-          startDebounceTimeLast = millis();
-        }
-        if (millis() - startDebounceTimeLast > debounceDelay) {
-          // If the button state has not changed, record the state
-
-          // If the state has changed from the last recording
-          if (startRead != startBttnState) {
-            startBttnState = startRead;
-          }
-        }
-        // If the start button is high, begin the game
-        if (startBttnState == HIGH) {
+        // If the start button was pressed, begin the game
+        if (start.rose()) {
           state = 'b';
         }
-        startBttnStateLast = startRead;
       }
       break;
     case 'b':
       {
-        /* Setup the timer depending on the difficulty.
-         * 0 - 5 is 10 minutes 
-         * 6 - 9 is 5 minutes
+        /* Setup the maxTime depending on the difficulty.
+           0 is 15 minutes
+           1 is 10 minutes
+           2 is 5 minutes
+           3 is 5 minutes, start with 2 strikes
         */
-        
+        maxTime -= 5UL * 60UL * 1000UL * difficulty;
+        if (difficulty == 3) {
+          maxTime = 5UL * 60UL * 1000UL;
+          strikes = 2;
+        }
+
+        // Notify the other modules to start;
+
+        // Setup the start time
+        startTime = millis();
+        state = 'r';
       }
-      break
+      break;
     case 'r':
+      {
+        // Display the current time
+        static unsigned long oldDisplayedTime = maxTime / 1000; // The previous time to display in seconds
+        unsigned long elapsedTime = millis() - startTime; // The ammount of time elasped in ms
+        unsigned long timeLeft = maxTime - elapsedTime;   // The ammount of time left in ms
+        unsigned long displayedTime = timeLeft / 1000;    // The ammount of time left in sec
+        if (displayedTime != oldDisplayedTime)
+        {
+          String min = String(displayedTime / 60);
+          String sec = String(displayedTime % 60);
+          if (sec.length() < 2)
+          {
+            sec = String("0" + sec);
+          }
+          if (min.length() < 2)
+          {
+            min = String("0" + min);
+          }
+          tempString = String(min + sec);
+          s7s.print(tempString);
+          setDecimals(0b00010000); // Set the colon on
+
+          // Play a tone
+          buzz.play(NOTE_C7, 100);
+          delay(250);
+          buzz.play(NOTE_A6, 50);
+          oldDisplayedTime = displayedTime;
+        }
+        // Check if the player is out of time
+        if (elapsedTime > maxTime) {
+          state = 'f';
+        }
+
+        // Communicate with the other modules
+
+        // Check the number of strikes
+        if (strikes == 3) {
+          state = 'f';
+        }
+
+        // Check how many modules have finished
+        if (finishedMod == 5) {
+          state = 'c';
+        }
+
+        //Debug finish
+        // Read the state of the difficulty button
+        diff.update();
+
+        // Increase the difficulty if there was a postive edge
+        if ( diff.rose()) {
+          state = 'c';
+        }
+
+      }
       break;
     case 'c':
+      buzz.play(NOTE_C6, 150);
+      delay(200);
+      buzz.play(NOTE_C6, 150);
+      delay(200);
+      //buzz.play(NOTE_G4,150);
+      //delay(200);
+      //buzz.play(NOTE_C5,150);
+      //delay(200);
+      state = 'd';
       break;
     case 'f':
+      {
+        // Message all modules that player has failed.
+        clearDisplay();
+        s7s.print(F("----"));
+        buzz.play(NOTE_F1, 3000);
+        delay(3000);
+        clearDisplay();
+        int randNumber = random(6);
+        switch (randNumber) {
+          case 0:
+            s7s.print(F("n00b"));
+            break;
+          case 1:
+            s7s.print(F("F---"));
+            break;
+          case 2:
+            s7s.print(F("FAIL"));
+            break;
+          case 3:
+            s7s.print(F("OOpS"));
+            break;
+          case 4:
+            s7s.print(F("SH--"));
+            break;
+          case 5:
+            s7s.print(F("NOOO"));
+            break;
+        }
+        state = 'd';
+      }
+      break;
+    case 'd':
+      {
+        // Read the state of the start button
+        start.update();
+
+        // If the start button was pressed, begin the game
+        if (start.rose()) {
+          tempString = String("L" + String(difficulty, DEC) + "  ");
+          s7s.print(tempString);
+          state = 'w';
+        }
+
+      }
       break;
   }
-  //  // Magical sprintf creates a string for us to send to the s7s.
-  //  //  The %4d option creates a 4-digit integer.
-  //  sprintf(tempString, "%4d", counter);
-  //
-  //  // This will output the tempString to the S7S
-  //  s7s.print(tempString);
-  //  setDecimals(0b00000100);  // Sets digit 3 decimal on
-  //
-  //  counter++;  // Increment the counter
-  //  delay(100);  // This will make the display update at 10Hz.
 }
+
+//  // Magical sprintf creates a string for us to send to the s7s.
+//  //  The %4d option creates a 4-digit integer.
+//  sprintf(tempString, "%4d", counter);
+//
+//  // This will output the tempString to the S7S
+//  s7s.print(tempString);
+//  setDecimals(0b00000100);  // Sets digit 3 decimal on
+//
+//  counter++;  // Increment the counter
+//  delay(100);  // This will make the display update at 10Hz.
 
 // Send the clear display command (0x76)
 //  This will clear the display and reset the cursor
