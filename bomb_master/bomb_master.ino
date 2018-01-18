@@ -224,6 +224,11 @@ void loop()
           state = 'c';
         }
 
+        // Reset the oldDisplayedTime
+        if(state != 'r'){
+          oldDisplayedTime = maxTime / 1000;
+        }
+
       }
       break;
     case 'c':
