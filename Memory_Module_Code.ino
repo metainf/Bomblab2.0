@@ -31,6 +31,8 @@ const int shifter_input = 32;
 // completion pins
 const int complete = 10;
 
+// state
+int stage = 1; 
 
 void display1() {
   digitalWrite(display_a, LOW);
@@ -127,6 +129,7 @@ void setup() {
 
   // Clear the display before jumping into loop
   clearDisplay();
+  // set choice display
   setChoice();
   
   // set clock
@@ -148,7 +151,16 @@ void setup() {
   digitalWrite(complete, LOW);
 }
 
+// call when an incorrect button is pushed
+void wrong() {
+  
+}
+
+// call when the correct button is pushed
+void pass() {
+  
+}
+
 void loop() {
-  // put your main code here, to run repeatedly:
   
 }
