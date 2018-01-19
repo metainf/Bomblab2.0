@@ -51,14 +51,14 @@ Bounce start = Bounce();
 Bounce diff = Bounce();
 Tone buzz;
 
-unsigned int strikes = 0;     // The total number of strikes
+char strikes = '0';     // The total number of strikes
 unsigned int difficulty = 0;  // The difficulty of the game, 0 through 3
 char state = 'w';             // The state of the game
-unsigned int finishedMod = 0; // The number of finished modules
+volatile unsigned int finishedMod = 0; // The number of finished modules
 
 // i2c addr for the modules
 // modAddr[0] is the module that requires the timer info
-const int[] modAddr = {2, 4, 6, 8, 10};
+const int modAddr[] = {2, 4, 6, 8, 10};
 /*
    w = waiting state, waiting for the user to start the game after selecting difficulty
    b = begin state, setup game to start.
@@ -67,10 +67,11 @@ const int[] modAddr = {2, 4, 6, 8, 10};
    f = failed, T win, bomb has exploded
 */
 
-unsigned long maxTime = 1UL * 5UL * 1000UL; // The maximum value of time in ms
+unsigned long maxTime = 15UL * 60UL * 1000UL; // The maximum value of time in ms
 unsigned long startTime;
 //volatile char tempString[10];  // Will be used with sprintf to create strings
 String tempString;
+String timeString;
 
 void setup()
 {
@@ -151,12 +152,15 @@ void loop()
         // If the start button was pressed, begin the game
         if (start.rose()) {
           // TODO: SEND THE START SIGNAL TO ALL MODULES
+          sendChar('s');
           state = 'b';
         }
       }
       break;
     case 'b':
       {
+        strikes = '0';
+        finishedMod = 0;
         /* Setup the maxTime depending on the difficulty.
            0 is 15 minutes
            1 is 10 minutes
@@ -166,11 +170,10 @@ void loop()
         maxTime -= 5UL * 60UL * 1000UL * difficulty;
         if (difficulty == 3) {
           maxTime = 5UL * 60UL * 1000UL;
-          strikes = 2;
+          strikes = '2';
         }
 
-        // TODO: Notify the other modules to start
-        
+        delay(1000);
 
         // Setup the start time
         startTime = millis();
@@ -183,7 +186,7 @@ void loop()
         static unsigned long oldDisplayedTime = maxTime / 1000; // The previous time to display in seconds
         unsigned long elapsedTime = millis() - startTime; // The ammount of time elasped in ms
         unsigned long timeLeft = maxTime - elapsedTime;   // The ammount of time left in ms
-        displayedTime = timeLeft / 1000;    // The ammount of time left in sec
+        unsigned long displayedTime = timeLeft / 1000;    // The ammount of time left in sec
         if (displayedTime != oldDisplayedTime)
         {
           String min = String(displayedTime / 60);
@@ -196,8 +199,8 @@ void loop()
           {
             min = String("0" + min);
           }
-          tempString = String(min + sec);
-          s7s.print(tempString);
+          timeString = String(min + sec);
+          s7s.print(timeString);
           setDecimals(0b00010000); // Set the colon on
 
           // Play a tone
@@ -213,48 +216,48 @@ void loop()
 
         // Communicate with the other modules
 
+        // Send the time to each module
+        sendTime();
+
+        // Send the number of strikes to each module
+        sendChar(strikes);
+
+        // Get the status of each module
+        getStatus();
+
         // Check the number of strikes
-        if (strikes == 3) {
+        if (strikes == '3') {
           state = 'f';
         }
 
         // Check how many modules have finished
-        if (finishedMod == 5) {
-          state = 'c';
-        }
-
-        //Debug finish
-        // Read the state of the difficulty button
-        diff.update();
-
-        // Increase the difficulty if there was a positive edge
-        if ( diff.rose()) {
+        if (finishedMod == 1) {
           state = 'c';
         }
 
         // Reset the oldDisplayedTime
-        if(state != 'r'){
+        if (state != 'r') {
           oldDisplayedTime = maxTime / 1000;
         }
+        Serial.print(strikes);
+        Serial.println(finishedMod);
 
       }
       break;
     case 'c':
-      buzz.play(NOTE_C6, 150);
-      delay(200);
-      buzz.play(NOTE_C6, 150);
-      delay(200);
-      //buzz.play(NOTE_G4,150);
-      //delay(200);
-      //buzz.play(NOTE_C5,150);
-      //delay(200);
-      state = 'd';
+      {
+        buzz.play(NOTE_C6, 150);
+        delay(200);
+        buzz.play(NOTE_C6, 150);
+        delay(200);
+        s7s.print("dfsd");
+        state = 'd';
+      }
       break;
     case 'f':
       {
         // Message all modules that player has failed.
-        strikes = 3;
-        sendStrikes();
+        sendChar('3');
         clearDisplay();
         s7s.print(F("----"));
         buzz.play(NOTE_F1, 3000);
@@ -289,10 +292,12 @@ void loop()
         // Read the state of the start button
         start.update();
 
-        // If the start button was pressed, begin the game
+        // If the start button was pressed, go back to the waiting state
         if (start.rose()) {
+          clearDisplay();
           tempString = String("L" + String(difficulty, DEC) + "  ");
           s7s.print(tempString);
+          sendChar('r');
           state = 'w';
         }
 
@@ -339,39 +344,21 @@ void setDecimals(byte decimals)
   s7s.write(decimals);
 }
 
-void sendStrikes() {
+void sendChar(char c) {
   for (int x = 0; x < numMod; x++) {
     Wire.beginTransmission(modAddr[x]);
-    Wire.write(String(strikes, DEC));
-    /*
-    switch (strikes) {
-      case 0:
-        Wire.write('0');
-        break;
-      case 1:
-        Wire.write('1');
-        break;
-      case 2:
-        Wire.write('2');
-        break;
-      case 3:
-        Wire.write('3');
-        break;
-      default: // should not reach here
-        Serial.println("gg");
-        break;
-    }
-    */
+    Wire.write(c);
     Wire.endTransmission();
   }
 }
 
-void getStrikes() {
-  int totalStrikes = 0;
+void getStatus() {
+  char totalStrikes = 0;
+  unsigned int totalFinished = 0;
   for (int x = 0; x < numMod; x++) {
     Wire.requestFrom(modAddr[x], 1);
     char c = Wire.read();
-    case (c) {
+    switch (c) {
       case '0':
         break;
       case '1':
@@ -383,13 +370,24 @@ void getStrikes() {
       case '3':
         totalStrikes += 3;
         break;
+      case 'c':
+        totalFinished++;
+        break;
     }
   }
-  strikes = totalStrikes;
+  if (totalStrikes > 3) {
+    totalStrikes = 3;
+  }
+  strikes = totalStrikes + '0';
+  finishedMod = totalFinished;
 }
 
+
+
 void sendTime() {
+  char buf[10];
+  timeString.toCharArray(buf, 4);
   Wire.beginTransmission(modAddr[0]);
-  Wire.write(tempString);
+  Wire.write(buf);
   Wire.endTransmission();
 }

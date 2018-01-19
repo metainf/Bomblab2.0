@@ -23,7 +23,7 @@ Adafruit_PCD8544 display4 = Adafruit_PCD8544(13, 11, dcPin, displaycs4, dummyrst
 
 Adafruit_PCD8544* displayArray[] = {&display1, &display2, &display3, &display4};
 
-static const unsigned char PROGMEM contrast[] = {50, 30, 30, 50};
+static const unsigned char PROGMEM contrast[] = {50, 30, 35, 50};
 
 // Counters
 int i;
@@ -44,7 +44,8 @@ static unsigned char randArray[] = {0, 1, 2, 3, 4, 5, 6};
 // Game Logic Vars
 volatile char myStrikes = '0';     // The total number of myStrikes
 volatile char totalStrikes = '0'; // The total strikes the player gotten in the game
-unsigned int difficulty = 0;  // The difficulty of the game, 0 through 3
+volatile char myStatus = ' ';
+volatile char gameStatus = ' ';
 char state = 'w';             // The state of the game
 /*
    w = waiting state, waiting for the user to start the game after selecting difficulty
@@ -52,6 +53,7 @@ char state = 'w';             // The state of the game
    r = running state, game in progress
    c = completed, CT win, bomb has been defused
    f = failed, T win, bomb has exploded
+   d = wait to restart
 */
 
 
@@ -78,7 +80,7 @@ int ledArray[] = {led0Pin, led1Pin, led2Pin, led3Pin};
 
 void setup() {
   Serial.begin(9600);
-  Wire.begin(1);
+  Wire.begin(4);
   Wire.onRequest(requestEvent); // register event
   Wire.onReceive(receiveEvent); // register event
 
@@ -132,21 +134,6 @@ void setup() {
     //                                (bitmap_table[0]), 48, 48, BLACK);
     displayArray[i]->display();
   }
-
-  // Choose a column to display from, and randomize the display array
-  scrambleArray(randArray, 7);
-  randColumn = random(6);
-
-  for (i = 0; i < 7; i++)
-  {
-    Serial.print(randArray[i]);
-    Serial.print(" ");
-  }
-  Serial.println();
-  Serial.println(randColumn);
-
-
-
 }
 
 void loop() {
@@ -168,13 +155,36 @@ void loop() {
     case 'w':
       {
         // Wait for the start of the game
-        if (totalStrikes == 's') {
+        if (gameStatus == 's') {
+          myStatus = 's';
           state = 'b';
         }
+        delay(50);
       }
       break;
     case 'b':
       {
+        totalStrikes = '0';
+        myStrikes = '0';
+
+        // Set LED output pins to turn LEDs off
+        digitalWrite(led0Pin, LOW);
+        digitalWrite(led1Pin, LOW);
+        digitalWrite(led2Pin, LOW);
+        digitalWrite(led3Pin, LOW);
+
+        // Choose a column to display from, and randomize the display array
+        scrambleArray(randArray, 7);
+        randColumn = random(6);
+
+        for (i = 0; i < 7; i++)
+        {
+          Serial.print(randArray[i]);
+          Serial.print(" ");
+        }
+        Serial.println();
+        Serial.println(randColumn);
+
         // Display the chosen output
         for (i = 0; i < 4; i++) {
           // Get the right bitmap index
@@ -226,6 +236,7 @@ void loop() {
         }
 
         if (curr_stage == 4) {
+          curr_stage = 0;
           state = 'c';
         }
 
@@ -240,6 +251,7 @@ void loop() {
       break;
     case 'c':
       {
+        myStatus = 'c';
         state = 'd';
       }
       break;
@@ -250,7 +262,13 @@ void loop() {
       break;
     case 'd':
       {
-        state = 'w';
+        // Wait for the player to begin the game.
+        if (gameStatus == 'r')
+        {
+          myStatus = ' ';
+          state = 'w';
+        }
+        delay(50);
       }
       break;
   }
@@ -283,14 +301,32 @@ int lessThan(unsigned char * array, int current)
 // function that executes whenever data is requested by master
 // this function is registered as an event, see setup()
 void requestEvent() {
-  Wire.write(myStrikes); // respond with message of 1 bytes
-  // as expected by master
+  if (myStatus == 'c') {
+    Wire.write(myStatus); // respond with message of 1 bytes
+  }
+  else {
+    Wire.write(myStrikes);
+  }
+
 }
 
 void receiveEvent(int howMany) {
+  char c = ' ';
   while (0 < Wire.available()) {
-    totalStrikes = Wire.read(); // receive byte as a character
-    Serial.print(totalStrikes); // print the character
+    c = Wire.read(); // receive byte as a character
+    //Serial.print(c); // print the character
   }
+  switch (c) {
+    case 's':
+      gameStatus = 's';
+      break;
+    case 'r':
+      gameStatus = 'r';
+      break;
+    default:
+      totalStrikes = c;
+      break;
+  }
+
 }
 
