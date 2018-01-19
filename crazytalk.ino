@@ -43,7 +43,7 @@ Adafruit_SSD1325 display(OLED_MOSI, OLED_CLK, OLED_DC, OLED_RESET, OLED_CS);
 // this is for hardware SPI, fast! but fixed oubs
 //Adafruit_SSD1325 display(OLED_DC, OLED_RESET, OLED_CS);
 
-char state; //i - initial, h - half, d - defused, r - reset, f - fail
+char state; //s - standby, i - initial, h - half, d - defused, r - reset, f - fail
 
 //pins
 const int buzzerPin = 2;
@@ -52,10 +52,14 @@ const int ledPin = 4;
 
 int switchVal = 0;
 
+//array info
 const int arraySize = 25;
 int index;
 
-char* timer = "0123456789"; //format: mmss
+//i2c variables
+char* timer = "1234"; //format: mmss. received from master
+char gameStatus = '0'; //status/strikes information received from master
+char strikes = '0'; //local strikes counter, sent to master upon request
 
 Tone buzz;
 
@@ -93,12 +97,13 @@ char downAction[arraySize] = {'1', '1', '8', '8', '8', '8', '3', '4', '3', '3', 
 char upAction[arraySize] = {'3', '5', '5', '2', '1', '3', '2', '7', '7', '9', '4', '0', '0', '0', '6', '5', '7', '5', '3', '8', '4', '2', '1', '9', '2'};
   
 void setup()   {
+  Wire.begin(5);                // join i2c bus with address #5
+  Wire.onReceive(receiveEvent); // register receive event
+  Wire.onRequest(requestEvent); // register request event
+  
   //start serial
   Serial.begin(9600);
   Serial.println("Crazy Talk Module");
-
-  //buffer for printing array values
-  char buf[60];
 
   //setup pins
   pinMode(switchPin, INPUT_PULLUP);
@@ -108,37 +113,16 @@ void setup()   {
   //setup the buzzer
   buzz.begin(buzzerPin);
 
-  state = 'i';
-
-  //randomly select a starting index
-  randomSeed(analogRead(0));
-  index = random(0, arraySize);
-  Serial.println(index);
-  Serial.println(downAction[index]);
-  Serial.println(upAction[index]);
-  
-  // by default, we'll generate the high voltage from the 3.3v line internally! (neat!)
-  display.begin();
-  // init done
-
-  display.display(); // show splashscreen
-  delay(1000);
-  display.clearDisplay();   // clears the screen and buffer
-
-  display.setTextSize(1);
-  display.setTextColor(WHITE);
-  display.setCursor(0, 0);
-  strcpy_P(buf, (char*)pgm_read_word(&(text[index]))); //prints randomly selected text
-  Serial.println(buf);
-  display.println(buf);
-  display.display();
+  state = 's';
 }
 
 void loop() {
   switchVal = digitalRead(switchPin);
   
   switch (state) { //1 = o down, 0 = | down. initial state = 0
-    case 'i':
+    case 's': //standby - used to wait for game start signal
+      break;
+    case 'i': //initial - starting position before any inputs. switch should be up
       if(switchVal == 1) { //switch is down
         if(inTimer(downAction[index])) {
           //beep
@@ -151,6 +135,7 @@ void loop() {
         }
         else {
           //add a strike
+          addStrike();
           buzz.play(NOTE_DS2, 200);
 
           Serial.println("state i to r");
@@ -159,7 +144,7 @@ void loop() {
       }
       break;
     
-    case 'h':
+    case 'h': //half - state after getting the first input correct
        if(switchVal == 0) { //switch is up
          if(inTimer(upAction[index])) {
           //beep
@@ -174,6 +159,7 @@ void loop() {
          
          else {
          //add a strike
+         addStrike();
          buzz.play(NOTE_DS2, 200);
 
          Serial.println("state h to r");
@@ -182,14 +168,14 @@ void loop() {
        }
       break;
     
-    case 'd':
+    case 'd': //defused!
       display.clearDisplay();
       display.setCursor(0, 0);
       display.println("defused!");
       display.display();
       break;
     
-    case 'r':
+    case 'r': //reset - prompts user to reset switch position if needed, then generates random index before moving to initial
       if(switchVal == 0) { //switch is up
         randomSeed(analogRead(0));
         index = random(0, arraySize);
@@ -215,18 +201,59 @@ void loop() {
       }
       break;
     
-    case 'f':
+    case 'f': //fail
+        display.clearDisplay();
+        display.setCursor(0, 0);
+        display.println("you failed!");
+        display.display();
       break;  
 
-    delay(1000);
+    delay(500);
   }
 }
 
 bool inTimer(char x) {
-    for(int i = 0; i < 10; i++) {
+    for(int i = 0; i < 4; i++) {
       if(x == timer[i]) {
         return true;
       }
     }
     return false;
 }
+
+void receiveEvent(int howMany) {
+  char* c;
+  for(int i = 0; i < howMany; i++) {
+      c[i] = Wire.read();
+  }
+  if(howMany == 1) {
+    gameStatus = c;
+    switch(gameStatus) {
+      case '3':
+        state = 'f';
+        break;
+      case 's': //game has started
+        state = 'r'; //move from standby to reset to generate text
+      case 'r': //game reset
+        strikes = '0'; //reset strikes counter
+        digitalWrite(4, LOW); //reset LED
+        state = 's'; //move to standby
+      default:  
+        break;
+    }
+  }
+  if(howMany == 4) {
+    timer = c;
+  }
+}
+
+void requestEvent() {
+  Wire.write(strikes);
+}
+
+void addStrike() {
+  if(strikes == '0') strikes = '1';
+  else if(strikes == '1') strikes = '2';
+  else strikes = '3';
+}
+
