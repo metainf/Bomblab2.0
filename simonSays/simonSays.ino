@@ -13,6 +13,8 @@
 #define toneDuration 200
 // the LED duration in milliseconds
 #define ledDuration 200
+// the I2C address
+#define i2cAddr 8
 #define red 0
 #define blue 1
 #define green 2
@@ -40,15 +42,18 @@ const int clearLED = ;
 // the pin number for the Piezo Buzzer
 const int buzzerPin = ;
 
-// the button that needs to be pressed if a button shows up in sequence
-// vowel/no vowel
+/*
+ * 2D array containing the button that needs to be pressed if a button
+ * shows up in sequence (RGBY respectively in each array)
+ * vowel/novowel
+ */
 volatile bool hasVowel = false;
-const int v   = {{blue, red, yellow, green},  // 0 strikes
-                 {yellow, green, blue, red},  // 1 strike
-                 {green, red, yellow, blue}}; // 2 strikes
-const int nv  = {{blue, yellow, green, red},  // 0 strikes
-                 {red, blue, yellow, green},  // 1 strike
-                 {yellow, green, blue, red}}; // 2 strikes
+const int v   = {{blue, yellow, red, green},  // 0 strikes
+                 {yellow, blue, green, red},  // 1 strike
+                 {green, yellow, red, blue}}; // 2 strikes
+const int nv  = {{blue, green, yellow, red},  // 0 strikes
+                 {red, yellow, blue, green},  // 1 strike
+                 {yellow, blue, green, red}}; // 2 strikes
 
 // all of the possible characters that can make up the serial number
 // vowels are 'A', 'E', 'I', 'O', 'U' (indices 0, 4, 8, 14, and 20)
@@ -71,7 +76,10 @@ volatile bool done = false;
 void setup() {
   // put your setup code here, to run once:
   // initialize the psuedo-random number generator
-  serial.begin(9600);
+  Serial.begin(9600);
+  Wire.begin(i2cAddr);            // join I2C bus with address i2cAddr
+  Wire.onReceive(receiveEvent);   // register receive event
+  Wire.onRequest(requestEvent); // register request event
   randomSeed(analogRead(0)); // TODO: PICK AN UNUSED PIN
   /*
    * initialize the buttons as inputs with internal pullup resistors and
@@ -164,15 +172,18 @@ void checkInput() {
   noInterrupts();
   rcvdInput = false;
   int cap = min(numInput, progress);
+  // sequence[x] is the color that the module flashes
+  // input[x] is the player's input in response
+  // index with [strikes][sequence[x]] to find the correct color
   if (hasVowel) {
     for (int x = 0; x <= cap; x++) {
-      if (inputs[x] != v[strikes][x]) {
+      if (inputs[x] != v[strikes][sequence[x]]) {
         fail();
       }
     }
   } else {
     for (int x = 0; x <= cap; x++) {
-      if (inputs[x] != nv[strikes][x]) {
+      if (inputs[x] != nv[strikes][sequence[x]]) {
         fail();
       }
     }
@@ -255,3 +266,16 @@ void randomize() {
     sequence[x] = random(0, numButtons);
   }
 }
+
+void receiveEvent(int howMany) {
+  int x = Wire.read();
+  switch (x) {
+    case -1:
+      break;
+  }
+}
+
+void requestEvent() {
+  Wire.write(strikes);
+}
+
