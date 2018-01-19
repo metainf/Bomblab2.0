@@ -47,7 +47,7 @@ Tone buzz;
 
 // state
 int stage = 1;
-
+int strikes = 0;
 
 // the following variables are unsigned longs because the time, measured in
 // milliseconds, will quickly become a bigger number than can be stored in an int.
@@ -123,8 +123,30 @@ void setChoice() {
   s7s.print(initial_choice); // Print initial random values onto the display
 }
 
+void receiveEvent(int size) {
+  char c = Wire.read();
+  switch (c) {
+    case '3':
+    case 's':
+    case 'r': {
+      stage = 1;
+      setup();
+      break;
+    }
+  }
+}
+
+void requestEvent() {
+  Wire.write(strikes);
+}
+
 void setup() {
   // put your setup code here, to run once:
+  // i2c integration
+  Wire.begin(2);
+  Wire.onReceive(receiveEvent);
+  Wire.onRequest(requestEvent);
+  
   Serial.begin(9600);
   // construct initial values
   randomSeed(analogRead(0));
@@ -206,6 +228,7 @@ void setup() {
 void fail() {
   // make failing tone
   buzz.play(NOTE_A4, 150);
+  strikes++;
   display_number = random(1, 5);
   // manual set of display
   setDisplay(display_number);
