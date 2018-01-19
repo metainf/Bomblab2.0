@@ -241,8 +241,6 @@ void fail() {
   // manual set of display
   setDisplay(display_number);
   setChoice();
-  Serial.println(stage);
-  // send failure interrupt to master
 }
 
 // call when the correct button is pushed
