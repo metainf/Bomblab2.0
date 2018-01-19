@@ -10,22 +10,25 @@ int choice3;
 int choice4;
 
 // display pins
-const int display_a = 11;
-const int display_b = 12;
-const int display_c = 15;
-const int display_d = 16;
-const int display_e = 17;
-const int display_f = 13;
-const int display_g = 14;
+const int display_a = 7;
+const int display_b = 8;
+const int display_c = 11;
+const int display_d = 12;
+const int display_e = 13;
+const int display_f = 9;
+const int display_g = 10;
 
 // choice display
-const int choice_display = 1;
+const int choice_display = 3;
+
+// choice array
+const int choice_array[] = {1234, 1243, 1324, 1342, 1423, 1432, 2134, 2143, 2314, 2341, 2413, 2431, 3124, 3142, 3214, 3241, 3412, 3421, 4123, 4132, 4213, 4231, 4312, 4321};
 
 // button input pins
-const int button1 = 23; // analog input pins are designated A0 - A3
-const int button2 = 24;
-const int button3 = 25;
-const int button4 = 26;
+const int button1 = 14; // analog input pins are designated A0 - A3
+const int button2 = 15;
+const int button3 = 16;
+const int button4 = 17;
 
 // Bounce library for input buttons
 Bounce read1 = Bounce();
@@ -34,14 +37,12 @@ Bounce read3 = Bounce();
 Bounce read4 = Bounce();
 
 // shifter pins
-const int shifter_clock = 2;
-const int shifter_input = 32;
-
-// completion pins
-const int complete = 10;
+const int shifter_shift = 6;
+const int shifter_input = 2;
+const int shifter_show = 4;
 
 // buzzer pins
-const int buzzer_pin = 9;
+const int buzzer_pin = 5;
 Tone buzz;
 
 // state
@@ -54,48 +55,46 @@ unsigned long lastDebounceTime = 0;  // the last time the output pin was toggled
 unsigned long debounceDelay = 50;    // the debounce time; increase if the output flickers
 
 // software serial pin
-const byte tx_pin = shifter_input;
-const byte rx_pin = 2;
-SoftwareSerial mySerial (rx_pin, tx_pin);
+const byte rx_pin = 0;
 SoftwareSerial s7s(rx_pin, choice_display);
 
 void display1() {
-  digitalWrite(display_a, LOW);
-  digitalWrite(display_b, HIGH);
-  digitalWrite(display_c, HIGH);
-  digitalWrite(display_d, LOW);
-  digitalWrite(display_e, LOW);
-  digitalWrite(display_f, LOW);
-  digitalWrite(display_g, LOW);
-}
-
-void display2() {
   digitalWrite(display_a, HIGH);
-  digitalWrite(display_b, HIGH);
+  digitalWrite(display_b, LOW);
   digitalWrite(display_c, LOW);
   digitalWrite(display_d, HIGH);
   digitalWrite(display_e, HIGH);
-  digitalWrite(display_f, LOW);
+  digitalWrite(display_f, HIGH);
   digitalWrite(display_g, HIGH);
 }
 
-void display3() {
-  digitalWrite(display_a, HIGH);
-  digitalWrite(display_b, HIGH);
-  digitalWrite(display_c, HIGH);
-  digitalWrite(display_d, HIGH);
-  digitalWrite(display_e, LOW);
-  digitalWrite(display_f, LOW);
-  digitalWrite(display_g, HIGH);
-}
-void display4() {
+void display2() {
   digitalWrite(display_a, LOW);
-  digitalWrite(display_b, HIGH);
+  digitalWrite(display_b, LOW);
   digitalWrite(display_c, HIGH);
   digitalWrite(display_d, LOW);
   digitalWrite(display_e, LOW);
   digitalWrite(display_f, HIGH);
-  digitalWrite(display_g, HIGH);
+  digitalWrite(display_g, LOW);
+}
+
+void display3() {
+  digitalWrite(display_a, LOW);
+  digitalWrite(display_b, LOW);
+  digitalWrite(display_c, LOW);
+  digitalWrite(display_d, LOW);
+  digitalWrite(display_e, HIGH);
+  digitalWrite(display_f, HIGH);
+  digitalWrite(display_g, LOW);
+}
+void display4() {
+  digitalWrite(display_a, HIGH);
+  digitalWrite(display_b, LOW);
+  digitalWrite(display_c, LOW);
+  digitalWrite(display_d, HIGH);
+  digitalWrite(display_e, HIGH);
+  digitalWrite(display_f, LOW);
+  digitalWrite(display_g, LOW);
 }
 
 void setDisplay(int display_number) {
@@ -111,10 +110,11 @@ void setDisplay(int display_number) {
 }
 
 void setChoice() {
-  choice1 = random(1, 5);
-  choice2 = random(1, 5);
-  choice3 = random(1, 5);
-  choice4 = random(1, 5);
+  int choice_pick = choice_array[random(0, 23)];
+  int choice1 = choice_pick / 1000;
+  int choice2 = choice_pick % 1000 / 100;
+  int choice3 = choice_pick % 100 / 10;
+  int choice4 = choice_pick % 10;
   String s_choice1 = String(choice1);
   String s_choice2 = String(choice2);
   String s_choice3 = String(choice3);
@@ -125,9 +125,13 @@ void setChoice() {
 
 void setup() {
   // put your setup code here, to run once:
+  Serial.begin(9600);
   // construct initial values
   randomSeed(analogRead(0));
+  
   display_number = random(1, 5);
+  // manual set of display
+  setDisplay(display_number);
   
   // set all display pins as output
   pinMode(display_a, OUTPUT);
@@ -137,9 +141,6 @@ void setup() {
   pinMode(display_e, OUTPUT);
   pinMode(display_f, OUTPUT);
   pinMode(display_g, OUTPUT);
-
-  // manual set of display
-  setDisplay(display_number);
 
   // setup buzzer
   buzz.begin(buzzer_pin);
@@ -155,29 +156,40 @@ void setup() {
   s7s.write(0x7A);  // Set brightness command byte
   s7s.write(255); // brightness data byte
 
-  delay(1500);
-
   // set choice display
   setChoice();
   
-  // set clock
-  pinMode(shifter_clock, OUTPUT);
-  tone(shifter_clock, 100);
-
-  // set progress LED to 1 via shifter
+  // shifter setup
   pinMode(shifter_input, OUTPUT);
-  mySerial.begin(9600);
-  mySerial.write(64); // fully on is 011111000
+  pinMode(shifter_shift, OUTPUT);
+  pinMode(shifter_show, OUTPUT);
+  
+  // clear stage LED
+  digitalWrite(shifter_input, LOW);
+  for (int i = 0; i < 8; i++) {
+    digitalWrite(shifter_shift, HIGH);
+    delay(10);
+    digitalWrite(shifter_shift, LOW);
+    delay(10);
+  }
+  // light stage 1 LED
+  digitalWrite(shifter_input, HIGH);
+  for (int j = 0; j < 4; j++) {
+    digitalWrite(shifter_shift, HIGH);
+    delay(10);
+    digitalWrite(shifter_shift, LOW);
+    delay(10);
+  }
+  digitalWrite(shifter_show, HIGH);
+  delay(10);
+  digitalWrite(shifter_show, LOW);
+  delay(10);
 
   // set button pins as input
   pinMode(button1, INPUT_PULLUP);
   pinMode(button2, INPUT_PULLUP);
   pinMode(button3, INPUT_PULLUP);
   pinMode(button4, INPUT_PULLUP);
-
-  // set complete LED to off
-  pinMode(complete, OUTPUT);
-  digitalWrite(complete, LOW);
 
   // setup buttons
   read1.attach(button1);
@@ -194,8 +206,12 @@ void setup() {
 void fail() {
   // make failing tone
   buzz.play(NOTE_A4, 150);
+  display_number = random(1, 5);
+  // manual set of display
+  setDisplay(display_number);
+  setChoice();
+  Serial.println(stage);
   // send failure interrupt to master
-  
 }
 
 // call when the correct button is pushed
@@ -205,30 +221,28 @@ void pass() {
     stage++;
     switch (stage) {
       case 1: {
-        mySerial.write(64);
         break;
       }
       case 2: {
-        mySerial.write(96);
         break;
       }
       case 3: {
-        mySerial.write(112);
         break;
       }
       case 4: {
-        mySerial.write(120);
         break;
       }
       case 5: {
-        mySerial.write(124);
         break;
       }
     }
-    
+    display_number = random(1, 5);
+    // manual set of display
+    setDisplay(display_number);
+    setChoice();
+    Serial.println(stage);
   } else {
     buzz.play(NOTE_C6, 300);
-    digitalWrite(complete, HIGH);
     // return control to the master module
   }
 }
@@ -243,6 +257,9 @@ void loop() {
   int input2 = read2.fell();
   int input3 = read3.fell();
   int input4 = read4.fell();
+
+  bool response = input1 || input2 || input3 || input4;
+  if (!response) {return;}
   
   int stage1_pass;
   int stage2_pass;
