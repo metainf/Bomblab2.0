@@ -1,7 +1,7 @@
-#include <SoftwareSerial.h>
+#include <Tone.h>
 #include <Wire.h>
 #include <Bounce2.h>
-#include <Tone.h>
+#include <SoftwareSerial.h>
 
 int display_number;
 int choice1;
@@ -17,6 +17,9 @@ const int display_d = 16;
 const int display_e = 17;
 const int display_f = 13;
 const int display_g = 14;
+
+// choice display
+const int choice_display = 1;
 
 // button input pins
 const int button1 = 23; // analog input pins are designated A0 - A3
@@ -39,6 +42,7 @@ const int complete = 10;
 
 // buzzer pins
 const int buzzer_pin = 9;
+Tone buzz;
 
 // state
 int stage = 1;
@@ -53,6 +57,7 @@ unsigned long debounceDelay = 50;    // the debounce time; increase if the outpu
 const byte tx_pin = shifter_input;
 const byte rx_pin = 2;
 SoftwareSerial mySerial (rx_pin, tx_pin);
+SoftwareSerial s7s(rx_pin, choice_display);
 
 void display1() {
   digitalWrite(display_a, LOW);
@@ -125,13 +130,13 @@ void setup() {
   display_number = random(1, 5);
   
   // set all display pins as output
-  pinmode(display_a, OUTPUT);
-  pinmode(display_b, OUTPUT);
-  pinmode(display_c, OUTPUT);
-  pinmode(display_d, OUTPUT);
-  pinmode(display_e, OUTPUT);
-  pinmode(display_f, OUTPUT);
-  pinmode(display_g, OUTPUT);
+  pinMode(display_a, OUTPUT);
+  pinMode(display_b, OUTPUT);
+  pinMode(display_c, OUTPUT);
+  pinMode(display_d, OUTPUT);
+  pinMode(display_e, OUTPUT);
+  pinMode(display_f, OUTPUT);
+  pinMode(display_g, OUTPUT);
 
   // manual set of display
   setDisplay(display_number);
@@ -144,34 +149,34 @@ void setup() {
   s7s.begin(9600);
 
   // Clear the display, and then turn on all segments and decimals
-  clearDisplay();  // Clears display, resets cursor
+  s7s.write(0x76);  // Clears display, resets cursor
   s7s.print("----");  // Displays ---- on all digits
 
-  setBrightness(255);  // High brightness
+  s7s.write(0x7A);  // Set brightness command byte
+  s7s.write(255); // brightness data byte
+
   delay(1500);
 
-  // Clear the display before jumping into loop
-  clearDisplay();
   // set choice display
   setChoice();
   
   // set clock
-  pinmode(shifter_clock, OUTPUT);
+  pinMode(shifter_clock, OUTPUT);
   tone(shifter_clock, 100);
 
   // set progress LED to 1 via shifter
-  pinmode(shifter_input, OUTPUT);
+  pinMode(shifter_input, OUTPUT);
   mySerial.begin(9600);
-  mySerial.write(01000000) // fully on is 011111000
+  mySerial.write(64); // fully on is 011111000
 
   // set button pins as input
-  pinmode(button1, INPUT_PULLUP);
-  pinmode(button2, INPUT_PULLUP);
-  pinmode(button3, INPUT_PULLUP);
-  pinmode(button4, INPUT_PULLUP);
+  pinMode(button1, INPUT_PULLUP);
+  pinMode(button2, INPUT_PULLUP);
+  pinMode(button3, INPUT_PULLUP);
+  pinMode(button4, INPUT_PULLUP);
 
   // set complete LED to off
-  pinmode(complete, OUTPUT);
+  pinMode(complete, OUTPUT);
   digitalWrite(complete, LOW);
 
   // setup buttons
@@ -200,23 +205,23 @@ void pass() {
     stage++;
     switch (stage) {
       case 1: {
-        mySerial.write(01000000);
+        mySerial.write(64);
         break;
       }
       case 2: {
-        mySerial.write(01100000);
+        mySerial.write(96);
         break;
       }
       case 3: {
-        mySerial.write(01110000);
+        mySerial.write(112);
         break;
       }
       case 4: {
-        mySerial.write(01111000);
+        mySerial.write(120);
         break;
       }
       case 5: {
-        mySerial.write(01111100);
+        mySerial.write(124);
         break;
       }
     }
@@ -234,10 +239,10 @@ void loop() {
   read3.update();
   read4.update();
 
-  input1 = read1.fell();
-  input2 = read2.fell();
-  input3 = read3.fell();
-  input4 = read4.fell();
+  int input1 = read1.fell();
+  int input2 = read2.fell();
+  int input3 = read3.fell();
+  int input4 = read4.fell();
   
   int stage1_pass;
   int stage2_pass;
@@ -273,63 +278,63 @@ void loop() {
           if (input4) {
             stage1_pass = 4;
             pass();
-          } else {fail():}
+          } else {fail();}
         }
       }
       break;
     }
     case 2: {
       switch (display_number) {
-        case1: {
-          if (input1 && choice1 = 4) {
+        case 1: {
+          if (input1 && choice1 == 4) {
             stage2_pass = 1;
             pass();
-          } else if (input2 && choice2 = 4) {
+          } else if (input2 && choice2 == 4) {
             stage2_pass = 2;
             pass();
-          } else if (input3 && choice3 = 4) {
+          } else if (input3 && choice3 == 4) {
             stage2_pass = 3;
             pass();
-          } else if (input4 && choice4 = 4) {
+          } else if (input4 && choice4 == 4) {
             stage2_pass = 4;
             pass();
           } else {fail();}
           break;
         }
-        case2: {
-          if (input1 && stage1_pass = 1) {
+        case 2: {
+          if (input1 && stage1_pass == 1) {
             stage2_pass = 1;
             pass();
-          } else if (input2 && stage1_pass = 2) {
+          } else if (input2 && stage1_pass == 2) {
             stage2_pass = 2;
             pass();
-          } else if (input3 && stage1_pass = 3) {
+          } else if (input3 && stage1_pass == 3) {
             stage2_pass = 3;
             pass();
-          } else if (input4 && stage1_pass = 4) {
+          } else if (input4 && stage1_pass == 4) {
             stage2_pass = 4;
             pass();
           } else {fail();}
           break;
         }
-        case3: {
+        case 3: {
           if (input1) {
             stage2_pass = 1;
             pass();
           } else {fail();}
           break;
         }
-        case4: {
-          if (input1 && stage1_pass = 1) {
+        case 4: {
+          if (input1 && stage1_pass == 1) {
             stage2_pass = 1;
             pass();
-          } else if (input2 && stage1_pass = 2) {
+          } else if (input2 && stage1_pass == 2) {
             stage2_pass = 2;
             pass();
-          } else if (input3 && stage1_pass = 3) {
+          } else if (input3 && stage1_pass == 3) {
             stage2_pass = 3;
             pass();
-          } else if (input4 && stage1_pass = 4) {
+          } else if (input4 && stage1_pass == 4) {
             stage2_pass = 4;
             pass();
           } else {fail();}
@@ -340,56 +345,56 @@ void loop() {
     }
     case 3: {
       switch (display_number) {
-        case1: {
-          if (input1 && stage2_pass = 1) {
+        case 1: {
+          if (input1 && stage2_pass == 1) {
             stage3_pass = 1;
             pass();
-          } else if (input2 && stage2_pass = 2) {
+          } else if (input2 && stage2_pass == 2) {
             stage3_pass = 2;
             pass();
-          } else if (input3 && stage2_pass = 3) {
+          } else if (input3 && stage2_pass == 3) {
             stage3_pass = 3;
             pass();
-          } else if (input4 && stage2_pass = 4) {
+          } else if (input4 && stage2_pass == 4) {
             stage3_pass = 4;
             pass();
           } else {fail();}
           break;
         }
-        case2: {
-          if (input1 && stage1_pass = 1) {
+        case 2: {
+          if (input1 && stage1_pass == 1) {
             stage3_pass = 1;
             pass();
-          } else if (input2 && stage1_pass = 2) {
+          } else if (input2 && stage1_pass == 2) {
             stage3_pass = 2;
             pass();
-          } else if (input3 && stage1_pass = 3) {
+          } else if (input3 && stage1_pass == 3) {
             stage3_pass = 3;
             pass();
-          } else if (input4 && stage1_pass = 4) {
+          } else if (input4 && stage1_pass == 4) {
             stage3_pass = 4;
             pass();
           } else {fail();}
           break;
         }
-        case3: {
+        case 3: {
           if (input3) {
             stage3_pass = 3;
             pass();
           } else {fail();}
           break;
         }
-        case4: {
-          if (input1 && choice1 = 4) {
+        case 4: {
+          if (input1 && choice1 == 4) {
             stage3_pass = 1;
             pass();
-          } else if (input2 && choice2 = 4) {
+          } else if (input2 && choice2 == 4) {
             stage3_pass = 2;
             pass();
-          } else if (input3 && choice3 = 4) {
+          } else if (input3 && choice3 == 4) {
             stage3_pass = 3;
             pass();
-          } else if (input4 && choice4 = 4) {
+          } else if (input4 && choice4 == 4) {
             stage3_pass = 4;
             pass();
           } else {fail();}
@@ -400,56 +405,56 @@ void loop() {
     }
     case 4: {
       switch (display_number) {
-        case1: {
-          if (input1 && stage1_pass = 1) {
+        case 1: {
+          if (input1 && stage1_pass == 1) {
             stage4_pass = 1;
             pass();
-          } else if (input2 && stage1_pass = 2) {
+          } else if (input2 && stage1_pass == 2) {
             stage4_pass = 2;
             pass();
-          } else if (input3 && stage1_pass = 3) {
+          } else if (input3 && stage1_pass == 3) {
             stage4_pass = 3;
             pass();
-          } else if (input4 && stage1_pass = 4) {
+          } else if (input4 && stage1_pass == 4) {
             stage4_pass = 4;
             pass();
           } else {fail();}
           break;
         }
-        case2: {
+        case 2: {
           if (input1) {
             stage4_pass = 1;
             pass();
           } else {fail();}
           break;
         }
-        case3: {
-          if (input1 && stage2_pass = 1) {
+        case 3: {
+          if (input1 && stage2_pass == 1) {
             stage4_pass = 1;
             pass();
-          } else if (input2 && stage2_pass = 2) {
+          } else if (input2 && stage2_pass == 2) {
             stage4_pass = 2;
             pass();
-          } else if (input3 && stage2_pass = 3) {
+          } else if (input3 && stage2_pass == 3) {
             stage4_pass = 3;
             pass();
-          } else if (input4 && stage2_pass = 4) {
+          } else if (input4 && stage2_pass == 4) {
             stage4_pass = 4;
             pass();
           } else {fail();}
           break;
         }
-        case4: {
-          if (input1 && stage2_pass = 1) {
+        case 4: {
+          if (input1 && stage2_pass == 1) {
             stage4_pass = 1;
             pass();
-          } else if (input2 && stage2_pass = 2) {
+          } else if (input2 && stage2_pass == 2) {
             stage4_pass = 2;
             pass();
-          } else if (input3 && stage2_pass = 3) {
+          } else if (input3 && stage2_pass == 3) {
             stage4_pass = 3;
             pass();
-          } else if (input4 && stage2_pass = 4) {
+          } else if (input4 && stage2_pass == 4) {
             stage4_pass = 4;
             pass();
           } else {fail();}
@@ -460,65 +465,65 @@ void loop() {
     }
     case 5: {
       switch (display_number) {
-        case1: {
-          if (input1 && stage1_pass = 1) {
+        case 1: {
+          if (input1 && stage1_pass == 1) {
             stage5_pass = 1;
             pass();
-          } else if (input2 && stage1_pass = 2) {
+          } else if (input2 && stage1_pass == 2) {
             stage5_pass = 2;
             pass();
-          } else if (input3 && stage1_pass = 3) {
+          } else if (input3 && stage1_pass == 3) {
             stage5_pass = 3;
             pass();
-          } else if (input4 && stage1_pass = 4) {
+          } else if (input4 && stage1_pass == 4) {
             stage5_pass = 4;
             pass();
           } else {fail();}
           break;
         }
-        case2: {
-          if (input1 && stage2_pass = 1) {
+        case 2: {
+          if (input1 && stage2_pass == 1) {
             stage5_pass = 1;
             pass();
-          } else if (input2 && stage2_pass = 2) {
+          } else if (input2 && stage2_pass == 2) {
             stage5_pass = 2;
             pass();
-          } else if (input3 && stage2_pass = 3) {
+          } else if (input3 && stage2_pass == 3) {
             stage5_pass = 3;
             pass();
-          } else if (input4 && stage2_pass = 4) {
+          } else if (input4 && stage2_pass == 4) {
             stage5_pass = 4;
             pass();
           } else {fail();}
           break;
         }
-        case3: {
-          if (input1 && stage4_pass = 1) {
+        case 3: {
+          if (input1 && stage4_pass == 1) {
             stage5_pass = 1;
             pass();
-          } else if (input2 && stage4_pass = 2) {
+          } else if (input2 && stage4_pass == 2) {
             stage5_pass = 2;
             pass();
-          } else if (input3 && stage4_pass = 3) {
+          } else if (input3 && stage4_pass == 3) {
             stage5_pass = 3;
             pass();
-          } else if (input4 && stage4_pass = 4) {
+          } else if (input4 && stage4_pass == 4) {
             stage5_pass = 4;
             pass();
           } else {fail();}
           break;
         }
-        case4: {
-          if (input1 && stage3_pass = 1) {
+        case 4: {
+          if (input1 && stage3_pass == 1) {
             stage5_pass = 1;
             pass();
-          } else if (input2 && stage3_pass = 2) {
+          } else if (input2 && stage3_pass == 2) {
             stage5_pass = 2;
             pass();
-          } else if (input3 && stage3_pass = 3) {
+          } else if (input3 && stage3_pass == 3) {
             stage5_pass = 3;
             pass();
-          } else if (input4 && stage3_pass = 4) {
+          } else if (input4 && stage3_pass == 4) {
             stage5_pass = 4;
             pass();
           } else {fail();}
