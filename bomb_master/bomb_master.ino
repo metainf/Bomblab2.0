@@ -26,7 +26,9 @@
 #include <Bounce2.h>
 #include <Tone.h>
 
-// These are the Arduino pins required to create a software seiral
+#define numMod 5
+
+// These are the Arduino pins required to create a software serial
 //  instance. We'll actually only use the TX pin.
 const int softwareTx = 2;
 const int softwareRx = 7;
@@ -53,6 +55,10 @@ unsigned int strikes = 0;     // The total number of strikes
 unsigned int difficulty = 0;  // The difficulty of the game, 0 through 3
 char state = 'w';             // The state of the game
 unsigned int finishedMod = 0; // The number of finished modules
+
+// i2c addr for the modules
+// modAddr[0] is the module that requires the timer info
+const int[] modAddr = {2, 4, 6, 8, 10};
 /*
    w = waiting state, waiting for the user to start the game after selecting difficulty
    b = begin state, setup game to start.
@@ -87,7 +93,7 @@ void setup()
   digitalWrite(strike1, LOW);
   digitalWrite(strike2, LOW);
 
-  // Start i2c
+  // Start i2c and join as the master
   Wire.begin();
 
   // Attach the debounced buttons to the pins
@@ -144,6 +150,7 @@ void loop()
 
         // If the start button was pressed, begin the game
         if (start.rose()) {
+          // TODO: SEND THE START SIGNAL TO ALL MODULES
           state = 'b';
         }
       }
@@ -162,7 +169,8 @@ void loop()
           strikes = 2;
         }
 
-        // Notify the other modules to start;
+        // TODO: Notify the other modules to start
+        
 
         // Setup the start time
         startTime = millis();
@@ -175,7 +183,7 @@ void loop()
         static unsigned long oldDisplayedTime = maxTime / 1000; // The previous time to display in seconds
         unsigned long elapsedTime = millis() - startTime; // The ammount of time elasped in ms
         unsigned long timeLeft = maxTime - elapsedTime;   // The ammount of time left in ms
-        unsigned long displayedTime = timeLeft / 1000;    // The ammount of time left in sec
+        displayedTime = timeLeft / 1000;    // The ammount of time left in sec
         if (displayedTime != oldDisplayedTime)
         {
           String min = String(displayedTime / 60);
@@ -219,7 +227,7 @@ void loop()
         // Read the state of the difficulty button
         diff.update();
 
-        // Increase the difficulty if there was a postive edge
+        // Increase the difficulty if there was a positive edge
         if ( diff.rose()) {
           state = 'c';
         }
@@ -245,6 +253,8 @@ void loop()
     case 'f':
       {
         // Message all modules that player has failed.
+        strikes = 3;
+        sendStrikes();
         clearDisplay();
         s7s.print(F("----"));
         buzz.play(NOTE_F1, 3000);
@@ -327,4 +337,59 @@ void setDecimals(byte decimals)
 {
   s7s.write(0x77);
   s7s.write(decimals);
+}
+
+void sendStrikes() {
+  for (int x = 0; x < numMod; x++) {
+    Wire.beginTransmission(modAddr[x]);
+    Wire.write(String(strikes, DEC));
+    /*
+    switch (strikes) {
+      case 0:
+        Wire.write('0');
+        break;
+      case 1:
+        Wire.write('1');
+        break;
+      case 2:
+        Wire.write('2');
+        break;
+      case 3:
+        Wire.write('3');
+        break;
+      default: // should not reach here
+        Serial.println("gg");
+        break;
+    }
+    */
+    Wire.endTransmission();
+  }
+}
+
+void getStrikes() {
+  int totalStrikes = 0;
+  for (int x = 0; x < numMod; x++) {
+    Wire.requestFrom(modAddr[x], 1);
+    char c = Wire.read();
+    case (c) {
+      case '0':
+        break;
+      case '1':
+        totalStrikes++;
+        break;
+      case '2':
+        totalStrikes += 2;
+        break;
+      case '3':
+        totalStrikes += 3;
+        break;
+    }
+  }
+  strikes = totalStrikes;
+}
+
+void sendTime() {
+  Wire.beginTransmission(modAddr[0]);
+  Wire.write(tempString);
+  Wire.endTransmission();
 }
