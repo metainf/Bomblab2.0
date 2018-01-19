@@ -10,7 +10,7 @@
 // the number of characters for the serial number
 #define numChars 36
 // the tone duration in milliseconds
-#define toneDuration 200
+#define toneDuration 150
 // the LED duration in milliseconds
 #define ledDuration 200
 // the I2C address
@@ -33,10 +33,10 @@
 */
 // TODO: PICK PINS FOR THE BUTTON, LEDS, AND THE BUZZER
 // the pin numbers for the colored COM-1044X buttons and their LEDs
-const int button = {}; // RGBY respectively
-const int led = {}; // RGBY respectively
+const int button[] = {}; // RGBY respectively
+const int led[] = {}; // RGBY respectively
 // the notes for each button
-const int tones = {}; // RGBY respectively TODO: FIGURE OUT WHAT TONES TO USE
+const int tones[] = {NOTE_G5, NOTE_D5, NOTE_G4, NOTE_B4}; // RGBY respectively
 // the pin number for the green LED
 const int clearLED = ;
 // the pin number for the Piezo Buzzer
@@ -48,19 +48,19 @@ const int buzzerPin = ;
  * vowel/novowel
  */
 volatile bool hasVowel = false;
-const int v   = {{blue, yellow, red, green},  // 0 strikes
-                 {yellow, blue, green, red},  // 1 strike
-                 {green, yellow, red, blue}}; // 2 strikes
-const int nv  = {{blue, green, yellow, red},  // 0 strikes
-                 {red, yellow, blue, green},  // 1 strike
-                 {yellow, blue, green, red}}; // 2 strikes
+const int v[]   = {{blue, yellow, red, green},  // 0 strikes
+                   {yellow, blue, green, red},  // 1 strike
+                   {green, yellow, red, blue}}; // 2 strikes
+const int nv[]  = {{blue, green, yellow, red},  // 0 strikes
+                   {red, yellow, blue, green},  // 1 strike
+                   {yellow, blue, green, red}}; // 2 strikes
 
 // all of the possible characters that can make up the serial number
 // vowels are 'A', 'E', 'I', 'O', 'U' (indices 0, 4, 8, 14, and 20)
-const char choices = {'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I',
-                      'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R',
-                      'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '0',
-                      '1', '2', '3', '4', '5', '6', '7', '8', '9'};
+const char choices[] = {'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I',
+                        'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R',
+                        'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '0',
+                        '1', '2', '3', '4', '5', '6', '7', '8', '9'};
 
 volatile int inputs[seqLength];
 
@@ -71,14 +71,15 @@ volatile int strikes  = 0;
 volatile int progress = 0;
 volatile int numInput = 0;
 volatile bool rcvdInput = false;
+volatile bool start = false;
 volatile bool done = false;
 
 void setup() {
   // put your setup code here, to run once:
   // initialize the psuedo-random number generator
   Serial.begin(9600);
-  Wire.begin(i2cAddr);            // join I2C bus with address i2cAddr
-  Wire.onReceive(receiveEvent);   // register receive event
+  Wire.begin(i2cAddr);          // join I2C bus with address i2cAddr
+  Wire.onReceive(receiveEvent); // register receive event
   Wire.onRequest(requestEvent); // register request event
   randomSeed(analogRead(0)); // TODO: PICK AN UNUSED PIN
   /*
@@ -110,6 +111,10 @@ void loop() {
    * https://code.google.com/archive/p/rogue-code/wikis/ToneLibraryDocumentation.wiki
    */
   // put your main code here, to run repeatedly:
+  if (!start) {
+    // return and restart the loop
+    return;
+  }
   if (done) {
     noInterrupts();
     digitalWrite(clearLED, HIGH);
@@ -125,10 +130,10 @@ void loop() {
 }
 
 void generateSerialNumber() {
-  char temp[serialLength];isr
+  char temp[serialLength];
   int tempIndex;
   for (int x = 0; x < serialLength; x++) {
-    tempIndex = random(0, numChars)
+    tempIndex = random(0, numChars);
     temp[x] = choices[tempIndex];
     switch (tempIndex) {
       case 0:   // 'A', fallthrough
@@ -136,13 +141,14 @@ void generateSerialNumber() {
       case 8:   // 'I', fallthrough
       case 14:  // 'O', fallthrough
       case 20:  // 'U'
-        hasVowel = True;
+        hasVowel = true;
       default:  // not a vowel
         break;
     }
   }
   serial = String(temp);
   Serial.println(serial);
+  Serial.println(hasVowel);
 }
 
 void displaySequence() {
@@ -255,7 +261,7 @@ void fail() {
   numInput = 0;
   progress = 0;
   strikes++;
-  buzzer.play(, toneDuration); // TODO: FIGURE OUT THE FAILURE TONE
+  buzzer.play(NOTE_DS2, toneDuration);
   randomize();
   interrupts();
 }
@@ -270,7 +276,16 @@ void randomize() {
 void receiveEvent(int howMany) {
   int x = Wire.read();
   switch (x) {
-    case -1:
+    case -1: // failed
+      start = false;
+      break;
+    case 0: // fallthrough
+    case 1: // fallthrough
+    case 2:
+      start = true;
+      strikes = max(x, strikes);
+      break;
+    default:
       break;
   }
 }
