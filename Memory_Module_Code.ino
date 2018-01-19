@@ -131,6 +131,8 @@ void receiveEvent(int size) {
     case 's':
     case 'r': {
       stage = 1;
+      strikes = 0;
+      solved = false;
       setup();
       break;
     }
@@ -149,7 +151,7 @@ void requestEvent() {
 void setup() {
   // put your setup code here, to run once:
   // i2c integration
-  Wire.begin(2);
+  Wire.begin(4);
   Wire.onReceive(receiveEvent);
   Wire.onRequest(requestEvent);
   
@@ -248,7 +250,7 @@ void pass() {
   if (stage < 5) {
     buzz.play(NOTE_C6, 150);
     stage++;
-    switch (stage) {
+    switch (stage) { // manipulate LEDs via shifter
       case 1: {
         break;
       }
