@@ -48,6 +48,7 @@ Tone buzz;
 // state
 int stage = 1;
 int strikes = 0;
+bool solved = false;
 
 // the following variables are unsigned longs because the time, measured in
 // milliseconds, will quickly become a bigger number than can be stored in an int.
@@ -130,6 +131,8 @@ void receiveEvent(int size) {
     case 's':
     case 'r': {
       stage = 1;
+      strikes = 0;
+      solved = false;
       setup();
       break;
     }
@@ -137,13 +140,18 @@ void receiveEvent(int size) {
 }
 
 void requestEvent() {
-  Wire.write(strikes);
+  if (solved) {
+    Wire.write('c');
+  } else {
+    char c_strikes = String(strikes).charAt(0);
+    Wire.write(c_strikes);
+  }
 }
 
 void setup() {
   // put your setup code here, to run once:
   // i2c integration
-  Wire.begin(2);
+  Wire.begin(4);
   Wire.onReceive(receiveEvent);
   Wire.onRequest(requestEvent);
   
@@ -233,8 +241,6 @@ void fail() {
   // manual set of display
   setDisplay(display_number);
   setChoice();
-  Serial.println(stage);
-  // send failure interrupt to master
 }
 
 // call when the correct button is pushed
@@ -242,7 +248,7 @@ void pass() {
   if (stage < 5) {
     buzz.play(NOTE_C6, 150);
     stage++;
-    switch (stage) {
+    switch (stage) { // manipulate LEDs via shifter
       case 1: {
         break;
       }
@@ -266,6 +272,7 @@ void pass() {
     Serial.println(stage);
   } else {
     buzz.play(NOTE_C6, 300);
+    solved = true;
     // return control to the master module
   }
 }
